@@ -45,10 +45,7 @@ import time
 
 
 # use monotonic clock if available
-if hasattr(time, 'monotonic'):
-    _current_time = time.monotonic
-else:
-    _current_time = time.time
+_current_time = time.monotonic if hasattr(time, 'monotonic') else time.time
 
 
 class Stopwatch:
@@ -93,7 +90,7 @@ class Stopwatch:
         return '{0:.3f}'.format(self.elapsed)
 
 
-_statistics = dict()
+_statistics = {}
 
 
 def get(key):

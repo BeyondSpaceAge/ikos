@@ -278,15 +278,15 @@ class ClangArgumentParser:
 
         self.args = collections.deque(cmd)
 
-        while self.args:
-            if (self.is_standard_in or
-                    self.is_preprocess or
-                    self.is_assemble or
-                    self.is_assembly or
-                    self.is_version or
-                    self.is_emit_llvm):
-                break  # no need to emit llvm bitcode
-
+        while (
+            self.args
+            and not self.is_standard_in
+            and not self.is_preprocess
+            and not self.is_assemble
+            and not self.is_assembly
+            and not self.is_version
+            and not self.is_emit_llvm
+        ):
             # next argument
             arg = self.args.popleft()
 
@@ -316,11 +316,7 @@ class ClangArgumentParser:
                    file=sys.stderr)
             sys.exit(1)
 
-        ret = []
-        for _ in range(nargs):
-            ret.append(self.args.popleft())
-
-        return ret
+        return [self.args.popleft() for _ in range(nargs)]
 
     def _set_standard_in(self, flag):
         self.is_standard_in = True
@@ -395,7 +391,7 @@ class ClangArgumentParser:
         elif not self.is_link:
             # -c but no -o, guess the file name
             base = os.path.basename(self.source_files[0])
-            return os.path.splitext(base)[0] + '.o'
+            return f'{os.path.splitext(base)[0]}.o'
         else:
             return 'a.out'
 
@@ -409,16 +405,12 @@ class ClangArgumentParser:
             return True
         if self.is_version:
             return True
-        if self.is_emit_llvm:
-            return True
-        if self.is_dependency and self.is_link:
-            return True
-        return False
+        return True if self.is_emit_llvm else bool(self.is_dependency and self.is_link)
 
 
 def run(cmd):
     ''' Run the given command and return the exit code '''
-    log.debug('Running %s' % command_string(cmd))
+    log.debug(f'Running {command_string(cmd)}')
 
     try:
         proc = subprocess.Popen(cmd)
@@ -435,7 +427,7 @@ def run(cmd):
 
 def check_output(cmd):
     ''' Run the given command and return the standard output, in bytes '''
-    log.debug('Running %s' % command_string(cmd))
+    log.debug(f'Running {command_string(cmd)}')
 
     try:
         return subprocess.check_output(cmd)
@@ -535,17 +527,17 @@ def attach_bitcode_path(obj_path, bc_path):
                obj_path]
         run(cmd)
     elif sys.platform.startswith('linux') or sys.platform.startswith('freebsd'):
-        cmd = [settings.llvm_objcopy(),
-               '--add-section',
-               '%s=%s' % (ELF_SECTION_NAME, f.name),
-               obj_path]
+        cmd = [
+            settings.llvm_objcopy(),
+            '--add-section',
+            f'{ELF_SECTION_NAME}={f.name}',
+            obj_path,
+        ]
+
         run(cmd)
     elif sys.platform.startswith('win'):
         # TODO(marthaud): use llvm-objcopy when they start supporting COFF/PE
-        cmd = ['objcopy',
-               '--add-section',
-               '%s=%s' % (PE_SECTION_NAME, f.name),
-               obj_path]
+        cmd = ['objcopy', '--add-section', f'{PE_SECTION_NAME}={f.name}', obj_path]
         run(cmd)
     else:
         assert False, 'unsupported platform'
@@ -559,11 +551,11 @@ def extract_bitcode(exe_path, bc_path):
     # first, extract the llvm bitcode paths
     cmd = [settings.llvm_objdump(), '-s']
     if sys.platform.startswith('darwin'):
-        cmd.append('-section=%s' % DARWIN_SECTION_NAME)
+        cmd.append(f'-section={DARWIN_SECTION_NAME}')
     elif sys.platform.startswith('linux') or sys.platform.startswith('freebsd'):
-        cmd.append('-section=%s' % ELF_SECTION_NAME)
+        cmd.append(f'-section={ELF_SECTION_NAME}')
     elif sys.platform.startswith('win'):
-        cmd.append('-section=%s' % PE_SECTION_NAME)
+        cmd.append(f'-section={PE_SECTION_NAME}')
     else:
         assert False, 'unsupported platform'
     cmd.append(exe_path)
@@ -590,7 +582,7 @@ def notify_binary_built(exe_path, bc_path):
 
     if 'IKOS_SCAN_NOTIFIER_FILES' in os.environ:
         bc_base_path, _ = os.path.splitext(abs_bc_path)
-        indicator_path = bc_base_path + '.ikosbin'
+        indicator_path = f'{bc_base_path}.ikosbin'
         with open(indicator_path, 'w') as indicator_file:
             indicator_file.write(json.dumps({
                 'exe': abs_exe_path,
@@ -670,7 +662,10 @@ class ScanServer(threading.Thread):
 def compile_main(mode, argv):
     progname = os.path.basename(argv[0])
 
-    if not ('IKOS_SCAN_SERVER' in os.environ or 'IKOS_SCAN_NOTIFIER_FILES' in os.environ):
+    if (
+        'IKOS_SCAN_SERVER' not in os.environ
+        and 'IKOS_SCAN_NOTIFIER_FILES' not in os.environ
+    ):
         printf('error: %s: missing environment variable IKOS_SCAN_SERVER or IKOS_SCAN_NOTIFIER_FILES.\n',
                progname, file=sys.stderr)
         sys.exit(1)
@@ -697,7 +692,7 @@ def compile_main(mode, argv):
             # bitcode path to the output object file
             src_path = parser.source_files[0]
             obj_path = parser.output_file
-            bc_path = '%s.bc' % obj_path
+            bc_path = f'{obj_path}.bc'
             build_bitcode(mode, parser, src_path, bc_path)
             attach_bitcode_path(obj_path, bc_path)
             return
@@ -706,7 +701,7 @@ def compile_main(mode, argv):
         new_object_files = []
         for src_path in parser.source_files:
             # build the object file
-            obj_path = '%s.o' % src_path
+            obj_path = f'{src_path}.o'
             build_object(mode, parser, src_path, obj_path)
             new_object_files.append(obj_path)
 
@@ -714,13 +709,12 @@ def compile_main(mode, argv):
             if src_path.endswith('.bc'):
                 bc_path = src_path
             else:
-                bc_path = '%s.bc' % obj_path
+                bc_path = f'{obj_path}.bc'
                 build_bitcode(mode, parser, src_path, bc_path)
 
             # attach the bitcode path to the object file, ready to be linked
             attach_bitcode_path(obj_path, bc_path)
 
-        # re-link to merge the llvm bitcode paths section
         if new_object_files:
             if parser.is_link:
                 link_objects(mode,
@@ -731,14 +725,12 @@ def compile_main(mode, argv):
                 log.warning('New object files but nothing to link')
 
         if parser.is_link and u'executable' in filetype(parser.output_file):
-            bc_path = '%s.bc' % parser.output_file
+            bc_path = f'{parser.output_file}.bc'
             extract_bitcode(parser.output_file, bc_path)
             notify_binary_built(parser.output_file, bc_path)
     except IOError as error:
         # ./configure sometimes removes the file while we are still running
-        if error.filename == parser.output_file:
-            pass
-        else:
+        if error.filename != parser.output_file:
             raise error
 
 
@@ -820,7 +812,7 @@ def extract_main(argv):
     log.setup(opt.log_level)
 
     input_path = opt.input
-    output_path = opt.output if opt.output else '%s.bc' % input_path
+    output_path = opt.output or f'{input_path}.bc'
     extract_bitcode(input_path, output_path)
 
 
@@ -945,14 +937,17 @@ def scan_main(argv):
         answer = sys.stdin.readline().strip().lower()
 
         if answer in ('', 'y', 'yes'):
-            cmd = ['ikos', bc_path, '-o', '%s.db' % exe_path]
-            log.info('Running %s' % colors.bold(command_string(cmd)))
+            cmd = ['ikos', bc_path, '-o', f'{exe_path}.db']
+            log.info(f'Running {colors.bold(command_string(cmd))}')
 
-            cmd = [sys.executable,
-                   settings.ikos(),
-                   bc_path,
-                   '-o',
-                   '%s.db' % exe_path,
-                   '--color=%s' % opt.color,
-                   '--log=%s' % opt.log_level]
+            cmd = [
+                sys.executable,
+                settings.ikos(),
+                bc_path,
+                '-o',
+                f'{exe_path}.db',
+                f'--color={opt.color}',
+                f'--log={opt.log_level}',
+            ]
+
             run(cmd)

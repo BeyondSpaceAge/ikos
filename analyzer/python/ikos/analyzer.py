@@ -530,13 +530,8 @@ def parse_arguments(argv):
         opt.display_times = 'no'
         opt.display_summary = 'no'
 
-    # default value for generate-dot-dir
     if opt.generate_dot and not opt.generate_dot_dir:
-        if opt.temp_dir and opt.save_temps:
-            opt.generate_dot_dir = opt.temp_dir
-        else:
-            opt.generate_dot_dir = '.'
-
+        opt.generate_dot_dir = opt.temp_dir if opt.temp_dir and opt.save_temps else '.'
     # parse --status-filter
     opt.status_filter = args.parse_argument(parser,
                                             'status-filter',
@@ -553,10 +548,7 @@ def parse_arguments(argv):
     return opt
 
 
-if hasattr(shlex, 'quote'):
-    sh_quote = shlex.quote
-else:
-    sh_quote = pipes.quote
+sh_quote = shlex.quote if hasattr(shlex, 'quote') else pipes.quote
 
 
 def command_string(cmd):
@@ -600,7 +592,7 @@ def create_working_directory(wd=None, save=False):
     if not save:
         atexit.register(shutil.rmtree, path=wd)
     else:
-        log.info('Temporary files will be kept in directory: %s' % wd)
+        log.info(f'Temporary files will be kept in directory: {wd}')
 
     return wd
 
@@ -619,12 +611,18 @@ def namer(path, ext, wd):
 
 def signal_name(signum):
     ''' Return the signal name given the signal number '''
-    for name, value in signal.__dict__.items():
-        if (name.startswith('SIG') and
-                not name.startswith('SIG_') and
-                value == signum):
-            return name
-    return str(signum)
+    return next(
+        (
+            name
+            for name, value in signal.__dict__.items()
+            if (
+                name.startswith('SIG')
+                and not name.startswith('SIG_')
+                and value == signum
+            )
+        ),
+        str(signum),
+    )
 
 
 def is_apron_domain(domain):
@@ -697,15 +695,15 @@ def clang(
     cmd += ['-isystem', settings.INCLUDE_DIR]
 
     if include_flags:
-        cmd += ['-I%s' % i for i in include_flags]
+        cmd += [f'-I{i}' for i in include_flags]
     if define_flags:
-        cmd += ['-D%s' % d for d in define_flags]
+        cmd += [f'-D{d}' for d in define_flags]
     if warning_flags:
-        cmd += ['-W%s' % w for w in warning_flags]
+        cmd += [f'-W{w}' for w in warning_flags]
     if disable_warnings:
         cmd.append('-w')
     if machine_flags:
-        cmd += ['-m%s' % m for m in machine_flags]
+        cmd += [f'-m{m}' for m in machine_flags]
 
     if colors:
         cmd.append('-fcolor-diagnostics')
@@ -715,8 +713,8 @@ def clang(
     if path_ext(cpp_path) in cpp_extensions:
         cmd.append('-std=c++17')  # available because clang >= 7.0
 
-    log.info('Compiling %s' % cpp_path)
-    log.debug('Running %s' % command_string(cmd))
+    log.info(f'Compiling {cpp_path}')
+    log.debug(f'Running {command_string(cmd)}')
     subprocess.check_call(cmd)
 
 
@@ -725,9 +723,12 @@ def ikos_pp(pp_path, bc_path, entry_points, opt_level, inline_all, verify):
         log.warning('Using aggressive optimizations is not recommended')
         log.warning('The translation from LLVM bitcode to AR might fail')
 
-    cmd = [settings.ikos_pp(),
-           '-opt=%s' % opt_level,
-           '-entry-points=%s' % ','.join(entry_points)]
+    cmd = [
+        settings.ikos_pp(),
+        f'-opt={opt_level}',
+        f"-entry-points={','.join(entry_points)}",
+    ]
+
 
     if inline_all:
         cmd.append('-inline-all')
@@ -738,7 +739,7 @@ def ikos_pp(pp_path, bc_path, entry_points, opt_level, inline_all, verify):
     cmd += [bc_path, '-o', pp_path]
 
     log.info('Running ikos preprocessor')
-    log.debug('Running %s' % command_string(cmd))
+    log.debug(f'Running {command_string(cmd)}')
     subprocess.check_call(cmd)
 
 

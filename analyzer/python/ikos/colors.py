@@ -116,7 +116,10 @@ def bold(s):
 
 for color in COLORS:
     globals()[color] = (lambda s, color=color: colorize(s, color))
-    globals()['bold_%s' % color] = (lambda s, color=color:
-                                    colorize(s, color, attrs=['bold']))
-    globals()['on_%s' % color] = (lambda s, color=color:
-                                  colorize(s, on_color=color))
+    globals()[f'bold_{color}'] = lambda s, color=color: colorize(
+        s, color, attrs=['bold']
+    )
+
+    globals()[f'on_{color}'] = lambda s, color=color: colorize(
+        s, on_color=color
+    )

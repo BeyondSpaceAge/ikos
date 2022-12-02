@@ -86,10 +86,7 @@ class MachineInt:
             return MachineInt(0, bit_width, sign)
 
     def is_min(self):
-        if self.is_signed():
-            return self.n == -2**(self.bit_width - 1)
-        else:
-            return self.n == 0
+        return self.n == -2**(self.bit_width - 1) if self.is_signed() else self.n == 0
 
     @staticmethod
     def max(bit_width, sign):
@@ -105,10 +102,7 @@ class MachineInt:
             return self.n == 2**self.bit_width - 1
 
     def high_bit(self):
-        if self.is_signed():
-            return self.n < 0
-        else:
-            return self.n >= 2**(self.bit_width - 1)
+        return self.n < 0 if self.is_signed() else self.n >= 2**(self.bit_width - 1)
 
     def sign_cast(self, sign):
         return MachineInt(self.n, self.bit_width, sign)
@@ -187,15 +181,15 @@ class Interval:
         assert not self.is_bottom()
 
         if self.is_top():
-            return 'could not bound %s' % var
+            return f'could not bound {var}'
         elif self.lb == self.ub:
-            return '%s = %s' % (var, self.lb)
+            return f'{var} = {self.lb}'
         elif self.lb.is_min():
-            return '%s <= %s' % (var, self.ub)
+            return f'{var} <= {self.ub}'
         elif self.ub.is_max():
-            return '%s >= %s' % (var, self.lb)
+            return f'{var} >= {self.lb}'
         else:
-            return '%s <= %s <= %s' % (self.lb, var, self.ub)
+            return f'{self.lb} <= {var} <= {self.ub}'
 
     def sign_cast(self, sign):
         if self.sign == sign:
@@ -203,15 +197,11 @@ class Interval:
         elif self.is_bottom():
             return Interval.bottom(self.bit_width, sign)
         else:
-            if self.lb.high_bit() == self.ub.high_bit():
-                lb = self.lb.sign_cast(sign)
-                ub = self.ub.sign_cast(sign)
-                if lb <= ub:
-                    return Interval(lb, ub)
-                else:
-                    return Interval(ub, lb)
-            else:
+            if self.lb.high_bit() != self.ub.high_bit():
                 return Interval.top(self.bit_width, sign)
+            lb = self.lb.sign_cast(sign)
+            ub = self.ub.sign_cast(sign)
+            return Interval(lb, ub) if lb <= ub else Interval(ub, lb)
 
     def __str__(self):
         if self.is_bottom():
@@ -219,7 +209,7 @@ class Interval:
         elif self.is_top():
             return 'T'
         else:
-            return '[%s, %s]' % (self.lb, self.ub)
+            return f'[{self.lb}, {self.ub}]'
 
 
 class Congruence:
@@ -271,6 +261,4 @@ class Congruence:
             return '⊥'
         if self.a == 0:
             return str(self.b)
-        if self.b == 0:
-            return '%dZ' % self.a
-        return '%dZ+%d' % (self.a, self.b)
+        return '%dZ' % self.a if self.b == 0 else '%dZ+%d' % (self.a, self.b)

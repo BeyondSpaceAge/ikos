@@ -97,10 +97,13 @@ if __name__ == '__main__':
     # Parse arguments
     description = 'Run clang-format on the whole repository'
     parser = argparse.ArgumentParser(description=description)
-    parser.add_argument('--srcdir',
-                        dest='src_dir',
-                        help='Path to the source directory [%s]' % src_dir,
-                        default=src_dir)
+    parser.add_argument(
+        '--srcdir',
+        dest='src_dir',
+        help=f'Path to the source directory [{src_dir}]',
+        default=src_dir,
+    )
+
     parser.add_argument('--clang-format',
                         dest='clang_format',
                         help='Path to the clang-format binary',
@@ -135,7 +138,7 @@ if __name__ == '__main__':
                file=sys.stderr)
         sys.exit(1)
 
-    version = r.group(1)
+    version = r[1]
     if version != CLANG_FORMAT_VERSION:
         printf("%s: error: trying to use clang-format %s, expecting %s\n",
                progname,

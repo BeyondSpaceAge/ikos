@@ -141,8 +141,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         ]
 
         for pattern, f in urls:
-            m = re.match(pattern, self.path)
-            if m:
+            if m := re.match(pattern, self.path):
                 f(**m.groupdict())
                 return
 
@@ -198,14 +197,15 @@ class RequestHandler(BaseHTTPRequestHandler):
     def _files(self):
         ''' Generate the Javascript variable files '''
         view_report = View.get().report
-        files = []
-
-        for file in view_report.files:
-            files.append({
+        files = [
+            {
                 'id': file.id,
                 'path': report.format_path(file.path),
-                'status_kinds': view_report.files_status_kinds[file.id]
-            })
+                'status_kinds': view_report.files_status_kinds[file.id],
+            }
+            for file in view_report.files
+        ]
+
 
         # Sort by path
         files.sort(key=operator.itemgetter('path'))
@@ -222,13 +222,15 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         for name, value in settings.items():
             if isinstance(value, list):
-                s.append('<tr><td>%s</td><td><i>%s</i></td></tr>'
-                         % (html.escape(name),
-                            html.escape(json.dumps(value))))
+                s.append(
+                    f'<tr><td>{html.escape(name)}</td><td><i>{html.escape(json.dumps(value))}</i></td></tr>'
+                )
+
             else:
-                s.append('<tr><td>%s</td><td><i>%s</i></td></tr>'
-                         % (html.escape(name),
-                            html.escape(str(value))))
+                s.append(
+                    f'<tr><td>{html.escape(name)}</td><td><i>{html.escape(str(value))}</i></td></tr>'
+                )
+
 
         self._write_template('settings.html', {'settings': '\n\t'.join(s)})
 
@@ -251,7 +253,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                          errors='ignore') as f:
                 code = f.read()
         except (OSError, IOError):
-            self._serve_error("No such file: %s" % file.path)
+            self._serve_error(f"No such file: {file.path}")
             return
 
         fmt = Formatter(file)
@@ -283,7 +285,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             mimetype = 'image/jpg'
         elif path.endswith('.png'):
             mimetype = 'image/png'
-        self.send_header('Content-Type', '%s; charset=UTF-8' % mimetype)
+        self.send_header('Content-Type', f'{mimetype}; charset=UTF-8')
         self.end_headers()
 
     def _write_file(self, fullpath):
@@ -339,7 +341,7 @@ class View:
         try:
             self.httpd = HTTPServer(('', self.port), RequestHandler)
         except (OSError, IOError) as e:
-            log.error("Could not start the HTTP server: %s" % e)
+            log.error(f"Could not start the HTTP server: {e}")
             sys.exit(1)
 
     def serve(self):
@@ -430,9 +432,7 @@ class Formatter(HtmlFormatter):
         lines_reports = view_report.files_lines_reports[self.file.id]
 
         yield 0, '<div class="highlight">\n'
-        line_num = 1
-
-        for i, line in source:
+        for line_num, (i, line) in enumerate(source, start=1):
             statement_reports = lines_reports.get(line_num)
 
             t = '''<div id="L%d" class="line_wrap status_%d">
@@ -460,8 +460,6 @@ class Formatter(HtmlFormatter):
                 self.checks[line_num] = self._build_checks(statement_reports)
 
             yield i, t
-            line_num += 1
-
         yield 0, '</div>'
 
     def _line_status(self, statement_reports):

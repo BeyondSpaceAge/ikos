@@ -61,10 +61,7 @@ class DummyHtmlFormatter(object):
 
 def dummy_highlight(data, lexer, formatter):
     lines = ((1, html.escape(line)) for line in data.split('\n'))
-    code = ''
-    for _, line in formatter.wrap(lines, None):
-        code += line
-    return code
+    return ''.join(line for _, line in formatter.wrap(lines, None))
 
 
 try:

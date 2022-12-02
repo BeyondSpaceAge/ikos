@@ -187,7 +187,7 @@ def generate_summary(db):
 
     c = db.con.cursor()
     order_by = 'statement_id, call_context_id'
-    c.execute('SELECT * FROM checks ORDER BY %s' % order_by)
+    c.execute(f'SELECT * FROM checks ORDER BY {order_by}')
 
     stmt_id_key = operator.itemgetter(ChecksTable.STATEMENT_ID)
     context_id_key = operator.itemgetter(ChecksTable.CALL_CONTEXT_ID)
@@ -260,11 +260,11 @@ def print_summary(db, full=True):
 
     if summary.error == 0 and summary.warning == 0:
         printf(bold_green('The program is SAFE') + '\n')
+    elif summary.error == 0:
+        printf(bold_yellow('The program is potentially UNSAFE') + '\n')
+
     else:
-        if summary.error != 0:
-            printf(bold_red('The program is definitely UNSAFE') + '\n')
-        else:
-            printf(bold_yellow('The program is potentially UNSAFE') + '\n')
+        printf(bold_red('The program is definitely UNSAFE') + '\n')
 
 
 ######################
@@ -342,7 +342,7 @@ def print_raw_checks(db, interprocedural):
         header.pop(0)  # no context column if intraprocedural
 
     c = db.con.cursor()
-    c.execute('SELECT * FROM checks ORDER BY %s' % order_by)
+    c.execute(f'SELECT * FROM checks ORDER BY {order_by}')
     rows = c.fetchall()
 
     # Format all rows
@@ -375,10 +375,19 @@ def print_raw_checks(db, interprocedural):
 
     # Print table
     printf(bold('# Checks') + '\n')
-    printf('|' +
-           '|'.join(' %s ' % head.ljust(width)
-                    for head, width in zip(header, col_widths)) +
-           '|\n')
+    printf(
+        (
+            (
+                '|'
+                + '|'.join(
+                    f' {head.ljust(width)} '
+                    for head, width in zip(header, col_widths)
+                )
+            )
+            + '|\n'
+        )
+    )
+
     printf('+' + '+'.join('-' * (width + 2) for width in col_widths) + '+\n')
     for row in rows:
         fmt = ('|' +
@@ -450,10 +459,7 @@ class StatementReport:
 
     def load_info(self):
         ''' Return the info, or None '''
-        if not self.info:
-            return None
-
-        return json.loads(self.info)
+        return json.loads(self.info) if self.info else None
 
     def __repr__(self):
         s = ('StatementReport('
@@ -508,13 +514,11 @@ def generate_report(db, status_filter=None, analyses_filter=None):
     if analyses_filter is not None:
         if not analyses_filter:
             where = ['0=1']  # analyses_filter=[], filter everything
-        elif len(analyses_filter) == len(args.analyses):
-            pass  # nothing to filter
-        else:
+        elif len(analyses_filter) != len(args.analyses):
             where.append(' OR '.join('(checker=%d)' % checker
                                      for checker in analyses_filter))
 
-    where = ' AND '.join('(%s)' % clause for clause in where)
+    where = ' AND '.join(f'({clause})' for clause in where)
 
     if display_unreachables and not display_oks:
         # Only show unreachable statements if the statement is unreachable for
@@ -523,23 +527,23 @@ def generate_report(db, status_filter=None, analyses_filter=None):
         where = '(%s) OR (checker=%d)' % (where, CheckerName.DEAD_CODE)
 
     if where:
-        where = 'WHERE %s' % where
+        where = f'WHERE {where}'
 
     order_by = 'ORDER BY statement_id, call_context_id'
 
     # Execute query
     c = db.con.cursor()
-    c.execute('SELECT * FROM checks %s %s' % (where, order_by))
+    c.execute(f'SELECT * FROM checks {where} {order_by}')
 
     stmt_id_key = operator.itemgetter(ChecksTable.STATEMENT_ID)
     context_id_key = operator.itemgetter(ChecksTable.CALL_CONTEXT_ID)
 
+    statement_checkers = set()
     for statement_id, statement_checks in itertools.groupby(c,
                                                             key=stmt_id_key):
         # Iterate over the checks for statement = statement_id
         statement_results = set()
-        statement_context_ids = list()
-        statement_checkers = set()
+        statement_context_ids = []
         statement_errors = collections.defaultdict(list)
         statement_warnings = collections.defaultdict(list)
         statement_oks = collections.defaultdict(list)
@@ -667,19 +671,18 @@ class TextFormatter(Formatter):
 
     def write_status(self, result):
         formatter = TextFormatter.RESULT_FORMATTER[result]
-        printf('%s: ' % formatter(TextFormatter.RESULT_STR[result]),
-               file=self.output)
+        printf(f'{formatter(TextFormatter.RESULT_STR[result])}: ', file=self.output)
 
     def write_note(self):
-        printf('%s: ' % bold_blue('note'), file=self.output)
+        printf(f"{bold_blue('note')}: ", file=self.output)
 
     def source_location_indent(self, statement):
-        return len('%s:%s:%s: ' % (format_path(statement.file_path()) or '?',
-                                   statement.line_or('?'),
-                                   statement.column_or('?')))
+        return len(
+            f"{format_path(statement.file_path()) or '?'}:{statement.line_or('?')}:{statement.column_or('?')}: "
+        )
 
     def status_indent(self, result):
-        return len('%s: ' % TextFormatter.RESULT_STR[result])
+        return len(f'{TextFormatter.RESULT_STR[result]}: ')
 
     def write_message(self, statement, result, message):
         if '\n' in message:
@@ -926,26 +929,19 @@ class SARIFFormatter(Formatter):
         files = set()
         for statement_report in report.statement_reports:
             statement = statement_report.statement()
-            name = statement.file_path()
-            if name:
+            if name := statement.file_path():
                 files.add(name)
         return [{'location': {'uri': format_path(file)}} for file in files]
 
     # the only levels in SARIF are error, warning, and note => change unreachable into note
     def format_level(self, level):
-        if level == "unreachable":
-            return "note"
-        else:
-            return level
+        return "note" if level == "unreachable" else level
 
     # some messages provided by IKOS are multi-line but it's not possible under the SARIF format:
     # change it into some single line message
     def single_line(self, text):
         # bundle multi-line messages into single-line messages
-        if '\n\t*' in text:
-            return text.replace('\n\t*', '  +--> ')
-        else:
-            return text
+        return text.replace('\n\t*', '  +--> ') if '\n\t*' in text else text
 
     def format_location(self, statement, message=None):
         path = format_path(statement.file_path())
@@ -965,7 +961,7 @@ class SARIFFormatter(Formatter):
             while not context.empty():
                 call = context.call()
                 func = call.function().pretty_name()
-                location = self.format_location(call, message="Call from %s" % func)
+                location = self.format_location(call, message=f"Call from {func}")
                 frames.append({'location': location})
                 context = context.parent()
             if frames:
@@ -992,8 +988,7 @@ class SARIFFormatter(Formatter):
                     },
                     'locations': [self.format_location(statement)],
                 }
-                stacks = self.format_stacks(statement_report)
-                if stacks:
+                if stacks := self.format_stacks(statement_report):
                     result['stacks'] = stacks
                 results.append(result)
         return results
@@ -1055,23 +1050,18 @@ class JUnitFormatter(Formatter):
 
     def get_timing_result(self, report):
         ''' get the timing results ifor the analysis from the database '''
-        db = report.db
-        elapsed = 0.0
-        if db:
+        if db := report.db:
             results = db.load_timing_results(True, True)
             for result in results:
                 if result[0] == 'ikos-analyzer':
                     return result[1]
-        return elapsed
+        return 0.0
 
     # some messages provided by IKOS are multi-line but 
     # we want to change it into some single line message
-    def single_line (self, text):
-        # 
-        if '\n\t*' in text:
-            return text.replace('\n\t*', '  +--> ')
-        else:
-            return text
+    def single_line(self, text):
+        #
+        return text.replace('\n\t*', '  +--> ') if '\n\t*' in text else text
 
     def format(self, report):
         testname = '.ikos-analysis-results'
@@ -1102,7 +1092,7 @@ class JUnitFormatter(Formatter):
 
         for statement_report in report.statement_reports:
             statement = statement_report.statement()
-            
+
             path = statement.file_path()
             # make sure that it's not one of those unreachable statements without any info
             if path and statement.line > 0 and statement.column > 0:
@@ -1195,9 +1185,8 @@ def ordinal_str(num):
     elif num == 3:
         return 'third'
 
-    if num > 9:
-        if str(num)[-2] == '1':
-            return '%dth' % num
+    if num > 9 and str(num)[-2] == '1':
+        return '%dth' % num
 
     last_digit = num % 10
     if last_digit == 1:
@@ -1214,42 +1203,34 @@ def statement_operand_str(statement, num):
     '''
     Return a string to represent the num-th operand of the given statement
     '''
-    if (statement.kind == StatementKind.ASSIGNMENT or
-            statement.kind == StatementKind.UNARY_OPERATION):
+    if statement.kind in [
+        StatementKind.ASSIGNMENT,
+        StatementKind.UNARY_OPERATION,
+    ]:
         return 'right hand side'
-    elif (statement.kind == StatementKind.BINARY_OPERATION or
-            statement.kind == StatementKind.COMPARISON):
-        if num == 0:
-            return 'left operand'
-        else:
-            return 'right operand'
+    elif statement.kind in [
+        StatementKind.BINARY_OPERATION,
+        StatementKind.COMPARISON,
+    ]:
+        return 'left operand' if num == 0 else 'right operand'
     elif statement.kind == StatementKind.RETURN:
         return 'returned value'
     elif statement.kind == StatementKind.ALLOCATE:
         return 'size operand'
     elif statement.kind == StatementKind.POINTER_SHIFT:
-        if num == 0:
-            return 'base operand'
-        else:
-            return '%s operand' % ordinal_str(num)
+        return 'base operand' if num == 0 else f'{ordinal_str(num)} operand'
     elif statement.kind == StatementKind.LOAD:
         return 'pointer'
     elif statement.kind == StatementKind.STORE:
-        if num == 0:
-            return 'pointer'
-        else:
-            return 'stored value'
-    elif (statement.kind == StatementKind.EXTRACT_ELEMENT or
-            statement.kind == StatementKind.INSERT_ELEMENT):
-        return '%s operand' % ordinal_str(num + 1)
-    elif (statement.kind == StatementKind.CALL or
-            statement.kind == StatementKind.INVOKE):
-        if num == 0:
-            return 'function pointer'
-        else:
-            return '%s argument' % ordinal_str(num)
-    elif (statement.kind == StatementKind.LANDING_PAD or
-            statement.kind == StatementKind.RESUME):
+        return 'pointer' if num == 0 else 'stored value'
+    elif statement.kind in [
+        StatementKind.EXTRACT_ELEMENT,
+        StatementKind.INSERT_ELEMENT,
+    ]:
+        return f'{ordinal_str(num + 1)} operand'
+    elif statement.kind in [StatementKind.CALL, StatementKind.INVOKE]:
+        return 'function pointer' if num == 0 else f'{ordinal_str(num)} argument'
+    elif statement.kind in [StatementKind.LANDING_PAD, StatementKind.RESUME]:
         return 'operand'
     else:
         assert False, 'unexpected kind'
@@ -1270,7 +1251,7 @@ def memory_location_str(mem_loc):
         elif 'name' in info:
             return "global variable '%s'" % info['name']
         elif 'cst' in info:
-            return "constant %s" % info['cst']
+            return f"constant {info['cst']}"
         else:
             return 'unnamed global variable'
     elif mem_loc.kind == MemoryLocationKind.FUNCTION:
@@ -1363,9 +1344,9 @@ def generate_division_by_zero_message(report, verbosity):
     s = 'divisor might be zero'
     if verbosity >= 2 or not interval.is_top():
         if is_variable_name(operand.repr):
-            s += ' (%s)' % interval.to_constraints(operand.repr)
+            s += f' ({interval.to_constraints(operand.repr)})'
         else:
-            s += ' (%s)' % interval.to_constraints('divisor')
+            s += f" ({interval.to_constraints('divisor')})"
 
     return s
 
@@ -1386,9 +1367,9 @@ def generate_shift_count_message(report, verbosity):
     if ((verbosity >= 2 or not interval.is_top()) and
             operand.kind != ValueKind.INTEGER_CONSTANT):
         if is_variable_name(operand.repr):
-            s += ' (%s)' % interval.to_constraints(operand.repr)
+            s += f' ({interval.to_constraints(operand.repr)})'
         else:
-            s += ' (%s)' % interval.to_constraints('count')
+            s += f" ({interval.to_constraints('count')})"
 
     if verbosity >= 2:
         n = interval.bit_width - 1
@@ -1399,12 +1380,12 @@ def generate_shift_count_message(report, verbosity):
 
 def generate_integer_overflow_message(report, verbosity, signedness, kind):
     if report.status == Result.OK:
-        return 'safe from %s integer %s' % (signedness, kind)
+        return f'safe from {signedness} integer {kind}'
 
     if report.status == Result.ERROR:
-        s = '%s integer %s' % (signedness, kind)
+        s = f'{signedness} integer {kind}'
     elif report.status == Result.WARNING:
-        s = 'possible %s integer %s' % (signedness, kind)
+        s = f'possible {signedness} integer {kind}'
     else:
         assert False, 'unexpected status'
 
@@ -1428,7 +1409,7 @@ def generate_integer_overflow_message(report, verbosity, signedness, kind):
             ops.append(right_interval.to_constraints('right'))
 
     if ops:
-        s += ' (%s)' % ', '.join(ops)
+        s += f" ({', '.join(ops)})"
 
     if verbosity >= 2:
         s += "\nbetween operands '%s' and '%s'" % (
@@ -1501,8 +1482,7 @@ def generate_pointer_overflow_message(report, verbosity):
 def generate_invalid_pointer_deref_message(report, verbosity):
     assert report.status == Result.ERROR
     (_, operand), = report.load_operands()
-    s = "pointer '%s' is invalid" % operand.repr
-    return s
+    return "pointer '%s' is invalid" % operand.repr
 
 
 def generate_unknown_memory_access_message(report, verbosity):
