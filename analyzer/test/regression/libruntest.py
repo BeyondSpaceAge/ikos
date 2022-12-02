@@ -224,7 +224,7 @@ class Database:
 
     def get_num_checks(self, result=None):
         where = ('WHERE status=%d' % result) if result else ''
-        self.cursor.execute('SELECT COUNT(*) FROM checks %s' % where)
+        self.cursor.execute(f'SELECT COUNT(*) FROM checks {where}')
         return self.cursor.fetchone()[0]
 
     def get_line_status(self, line):
@@ -279,11 +279,11 @@ class Test:
         assert os.path.exists(fullpath)
 
         # create working directory
-        wd = tempfile.mkdtemp(prefix='ikos-%s' % self.filename)
+        wd = tempfile.mkdtemp(prefix=f'ikos-{self.filename}')
         atexit.register(shutil.rmtree, path=wd)
 
         # run clang
-        bc_path = os.path.join(wd, '%s.bc' % self.filename)
+        bc_path = os.path.join(wd, f'{self.filename}.bc')
         cmd = [find_clang()]
         cmd += clang_emit_llvm_flags()
         cmd += clang_ikos_flags()
@@ -295,22 +295,29 @@ class Test:
                               stderr=subprocess.PIPE)
 
         # run ikos preprocessor
-        pp_path = os.path.join(wd, '%s.pp.bc' % self.filename)
-        cmd = [find_ikos_pp(),
-               '-opt=%s' % self.opt_level,
-               '-entry-points=%s' % ','.join(self.entry_points),
-               bc_path,
-               '-o', pp_path]
+        pp_path = os.path.join(wd, f'{self.filename}.pp.bc')
+        cmd = [
+            find_ikos_pp(),
+            f'-opt={self.opt_level}',
+            f"-entry-points={','.join(self.entry_points)}",
+            bc_path,
+            '-o',
+            pp_path,
+        ]
+
         subprocess.check_call(cmd,
                               stdout=subprocess.PIPE,
                               stderr=subprocess.PIPE)
 
         # run ikos analyzer
-        cmd = [find_ikos_analyzer(),
-               '-a=%s' % ','.join(self.analyses),
-               '-d=%s' % self.domain,
-               '-entry-points=%s' % ','.join(self.entry_points),
-               '-proc=%s' % self.procedural]
+        cmd = [
+            find_ikos_analyzer(),
+            f"-a={','.join(self.analyses)}",
+            f'-d={self.domain}',
+            f"-entry-points={','.join(self.entry_points)}",
+            f'-proc={self.procedural}',
+        ]
+
         cmd.extend(self.options)
         if self.opt_level == 'aggressive':
             cmd.append('-allow-dbg-mismatch')
@@ -412,7 +419,7 @@ class TestManager:
                 printf('\n')
                 self.print_progress()
                 # Move the cursor right after the '...'
-                printf('\r\033[A\033[%dC' % len('  %s ... ' % t.description))
+                printf('\r\033[A\033[%dC' % len(f'  {t.description} ... '))
 
             result = t.run(self.root, output_db)
             self.results[result.code] += 1

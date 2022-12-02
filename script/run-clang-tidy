@@ -157,17 +157,14 @@ def run_tidy(clang_tidy, build_dir, extra_checks, fix, task_queue, lock):
 
         # Build the clang-tidy command
         # TODO: enable colors when clang-tidy supports it
-        cmd = [clang_tidy]
-        cmd.append('-quiet')
-        cmd.append('-p=%s' % build_dir)
+        cmd = [clang_tidy, '-quiet', f'-p={build_dir}']
         checks = []
         if fullpath in FILE_IGNORE_CHECKS:
-            for check in FILE_IGNORE_CHECKS[fullpath]:
-                checks.append('-%s' % check)
+            checks.extend(f'-{check}' for check in FILE_IGNORE_CHECKS[fullpath])
         if extra_checks:
             checks.append(extra_checks)
         if checks:
-            cmd.append('-checks=%s' % ','.join(checks))
+            cmd.append(f"-checks={','.join(checks)}")
         if fix:
             cmd.append('-fix')
         cmd.append(fullpath)
@@ -208,14 +205,20 @@ if __name__ == '__main__':
     # Parse arguments
     description = 'Run clang-tidy on the whole repository'
     parser = argparse.ArgumentParser(description=description)
-    parser.add_argument('--srcdir',
-                        dest='src_dir',
-                        help='Path to the source directory [%s]' % src_dir,
-                        default=src_dir)
-    parser.add_argument('--builddir',
-                        dest='build_dir',
-                        help='Path to the build directory [%s]' % build_dir,
-                        default=build_dir)
+    parser.add_argument(
+        '--srcdir',
+        dest='src_dir',
+        help=f'Path to the source directory [{src_dir}]',
+        default=src_dir,
+    )
+
+    parser.add_argument(
+        '--builddir',
+        dest='build_dir',
+        help=f'Path to the build directory [{build_dir}]',
+        default=build_dir,
+    )
+
     parser.add_argument('--clang-tidy',
                         dest='clang_tidy',
                         help='Path to the clang-tidy binary',
@@ -274,12 +277,10 @@ if __name__ == '__main__':
     os.chdir(opt.src_dir)
 
     # Print the list of checks
-    cmd = [clang_tidy]
-    cmd.append('-p=%s' % build_dir)
+    cmd = [clang_tidy, f'-p={build_dir}']
     if opt.checks:
-        cmd.append('-checks=%s' % opt.checks)
-    cmd.append('-list-checks')
-    cmd.append('-')
+        cmd.append(f'-checks={opt.checks}')
+    cmd.extend(('-list-checks', '-'))
     subprocess.check_call(cmd)
 
     try:

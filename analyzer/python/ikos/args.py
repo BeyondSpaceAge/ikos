@@ -62,7 +62,7 @@ def help(title, choices, default=None):
 
 def choices(choices):
     ''' Build the tuple of choices '''
-    return list(opt for opt, _ in choices)
+    return [opt for opt, _ in choices]
 
 
 def parse_argument(parser, name, choices, groups, default, value):
@@ -84,15 +84,12 @@ def parse_argument(parser, name, choices, groups, default, value):
     if isinstance(value, (list, tuple)):
         value = ','.join(value)
 
-    choices = set(choice[0] for choice in choices)
+    choices = {choice[0] for choice in choices}
     choices.discard('*')  # prevent a bug
 
     result = set()
     for param in value.split(','):
         param = param.strip()
-        if not param:
-            pass
-
         # Parse +/-
         qualifier = '+'
         if param[0] == '+':
@@ -102,9 +99,6 @@ def parse_argument(parser, name, choices, groups, default, value):
             param = param[1:]
 
         param = param.strip()
-        if not param:
-            pass
-
         param_set = set()
         if param == '*':
             param_set = choices
@@ -125,7 +119,7 @@ def parse_argument(parser, name, choices, groups, default, value):
 
 class VersionAction(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
-        print('ikos %s' % settings.VERSION)
+        print(f'ikos {settings.VERSION}')
         print('Copyright (c) 2011-2019 United States Government as represented'
               ' by the')
         print('Administrator of the National Aeronautics and Space '
